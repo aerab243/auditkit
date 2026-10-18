@@ -18,8 +18,12 @@ function Get-AuditAntivirus {
         Execute les tests de l'antivirus et ajoute les resultats au rapport.
     #>
     param(
-        [Parameter(Mandatory)][object]$Report
+        [Parameter(Mandatory)][object]$Report,
+        # Seuils de tolerance (defaut : Get-AuditDefaultThresholds)
+        [object]$Thresholds
     )
+
+    if (-not $Thresholds) { $Thresholds = Get-AuditDefaultThresholds }
 
     $section = Add-AuditSection $Report -Name "Antivirus (Windows Defender)" `
         -Description "Etat de protection de l'antivirus integre."
@@ -88,11 +92,11 @@ function Get-AuditAntivirus {
         $sigStatus = 'WARN'
         $sigMsg = "Date de derniere mise a jour des definitions inconnue."
     }
-    elseif ($sigAgeDays -le 3) {
+    elseif ($sigAgeDays -le $Thresholds.Signatures.WarnJours) {
         $sigStatus = 'OK'
         $sigMsg = "Definitions a jour (maj il y a ${sigAgeDays} jour(s))."
     }
-    elseif ($sigAgeDays -le 7) {
+    elseif ($sigAgeDays -le $Thresholds.Signatures.FailJours) {
         $sigStatus = 'WARN'
         $sigMsg = "Definitions un peu anciennes (maj il y a ${sigAgeDays} jour(s))."
     }
@@ -136,7 +140,7 @@ function Get-AuditAntivirus {
         else {
             $scanAgeDays = ($scanAges | Measure-Object -Minimum).Minimum
             $scanStatus = 'OK'
-            if ($scanAgeDays -gt 7) { $scanStatus = 'WARN' }
+            if ($scanAgeDays -gt $Thresholds.Scan.WarnJours) { $scanStatus = 'WARN' }
             Add-AuditTest $section -Name "Dernier scan antivirus" -Status $scanStatus `
                 -Message "Dernier scan antivirus il y a ${scanAgeDays} jour(s)."
         }

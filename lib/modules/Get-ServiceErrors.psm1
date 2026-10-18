@@ -13,8 +13,13 @@ function Get-AuditServices {
         Exécute les tests des services et ajoute les résultats au rapport.
     #>
     param(
-        [Parameter(Mandatory)][object]$Report
+        [Parameter(Mandatory)][object]$Report,
+        # Seuils de tolerance (defaut : Get-AuditDefaultThresholds)
+        [object]$Thresholds
     )
+
+    if (-not $Thresholds) { $Thresholds = Get-AuditDefaultThresholds }
+    $maxListe = $Thresholds.Services.MaxListe
 
     $section = Add-AuditSection $Report -Name "Services" `
         -Description "Services Windows en état d'erreur ou non démarrés."
@@ -33,11 +38,11 @@ function Get-AuditServices {
         Add-AuditTest $section -Name "Services automatiques en erreur" -Status "OK" `
             -Message "Aucun service automatique arrêté anormalement."
     } else {
-        $names = $errorServices | ForEach-Object { $_.Name } | Select-Object -First 10
+        $names = $errorServices | ForEach-Object { $_.Name } | Select-Object -First $maxListe
         $test = Add-AuditTest $section -Name "Services automatiques en erreur" -Status "WARN" `
             -Message "$($errorServices.Count) service(s) automatique(s) arrêté(s) : $($names -join ', ')"
         Add-AuditDetail $test -Rows @(
-            $errorServices | Select-Object -First 10 | ForEach-Object {
+            $errorServices | Select-Object -First $maxListe | ForEach-Object {
                 [pscustomobject]@{ Service = $_.Name; DisplayName = $_.DisplayName; Status = 'Arrêté' }
             }
         )

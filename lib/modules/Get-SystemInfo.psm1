@@ -13,8 +13,12 @@ function Get-AuditSystem {
         Execute les tests de l'information systeme et ajoute les resultats au rapport.
     #>
     param(
-        [Parameter(Mandatory)][object]$Report
+        [Parameter(Mandatory)][object]$Report,
+        # Seuils de tolerance (defaut : Get-AuditDefaultThresholds)
+        [object]$Thresholds
     )
+
+    if (-not $Thresholds) { $Thresholds = Get-AuditDefaultThresholds }
 
     $section = Add-AuditSection $Report -Name "Systeme" `
         -Description "Version, ressources materielles et disponibilite."
@@ -35,11 +39,11 @@ function Get-AuditSystem {
     $freeGB  = [math]::Round($os.FreePhysicalMemory / 1MB, 1)
     $usedGB  = [math]::Round($totalGB - $freeGB, 1)
     $ramStatus = 'OK'
-    if ($totalGB -lt 4) {
+    if ($totalGB -lt $Thresholds.Ram.FailGo) {
         $ramStatus = 'FAIL'
         $msg = "RAM insuffisante : ${totalGB} Go"
     }
-    elseif ($totalGB -lt 8) {
+    elseif ($totalGB -lt $Thresholds.Ram.WarnGo) {
         $ramStatus = 'WARN'
         $msg = "RAM moderee : ${totalGB} Go (recommande : 8 Go+)"
     }
@@ -60,11 +64,11 @@ function Get-AuditSystem {
         $diskFreeGB   = [math]::Round($disk.FreeSpace / 1GB, 1)
         $diskUsedPct  = [math]::Round((($disk.Size - $disk.FreeSpace) / $disk.Size) * 100, 1)
         $diskStatus = 'OK'
-        if ($diskUsedPct -ge 90) {
+        if ($diskUsedPct -ge $Thresholds.Disque.FailPct) {
             $diskStatus = 'FAIL'
             $diskMsg = "Disque $($disk.DeviceID) presque plein : ${diskUsedPct}% utilise"
         }
-        elseif ($diskUsedPct -ge 75) {
+        elseif ($diskUsedPct -ge $Thresholds.Disque.WarnPct) {
             $diskStatus = 'WARN'
             $diskMsg = "Disque $($disk.DeviceID) : ${diskUsedPct}% utilise, surveiller"
         }
@@ -88,7 +92,7 @@ function Get-AuditSystem {
 
     # ---- 5. Uptime (temps de fonctionnement) ----
     $uptime = (Get-Date) - $os.LastBootUpTime
-    $upTest = Add-AuditTest $section -Name "Uptime" -Status "INFO" `
+    Add-AuditTest $section -Name "Uptime" -Status "INFO" `
         -Message "Le systeme tourne depuis $($uptime.Days)j $($uptime.Hours)h $($uptime.Minutes)m"
 
     return

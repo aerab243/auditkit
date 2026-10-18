@@ -5,6 +5,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white)](https://github.com/aerab243/auditkit)
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B%20%2F%207%2B-012456?logo=powershell&logoColor=white)](https://github.com/aerab243/auditkit)
 [![Read-only](https://img.shields.io/badge/Mode-100%25%20lecture%20seule-success)](https://github.com/aerab243/auditkit)
+[![CI](https://github.com/aerab243/auditkit/actions/workflows/ci.yml/badge.svg)](https://github.com/aerab243/auditkit/actions/workflows/ci.yml)
 
 AuditKit inspecte un poste Windows et produit un **rapport HTML complet, consultable hors-ligne** (aucune dépendance externe, CSS embarqué). Il ne modifie **jamais** le système audité.
 
@@ -82,6 +83,8 @@ powershell -ExecutionPolicy Bypass -File .\AuditKit.ps1
 | `-OutDir <chemin>` | Dossier où sera déposé le rapport HTML | `%USERPROFILE%\Documents\audit-reports` |
 | `-Title <texte>` | Titre affiché dans le rapport | `AuditKit - Audit Windows` |
 | `-Fast` | Mode rapide : n'exécute que les modules **Système** et **Pare-feu** | désactivé |
+| `-Quiet` | Mode non interactif : aucune invite (idéal scripts et CI) | désactivé |
+| `-ConfigPath <chemin>` | Fichier de configuration JSON (seuils + modules actifs) | `config\auditkit.config.json` |
 
 ### Exemples
 
@@ -94,6 +97,12 @@ powershell -ExecutionPolicy Bypass -File .\AuditKit.ps1
 
 # Audit express (systeme + pare-feu uniquement)
 .\AuditKit.ps1 -Fast
+
+# Mode non interactif : aucune invite, ideal pour les scripts et la CI
+.\AuditKit.ps1 -Quiet
+
+# Avec une configuration personnalisee
+.\AuditKit.ps1 -ConfigPath .\config\auditkit.config.json
 ```
 
 ### Résultat
@@ -102,7 +111,53 @@ powershell -ExecutionPolicy Bypass -File .\AuditKit.ps1
 
 1. affiche un **résumé en console** (statut global + nombre de tests par statut) ;
 2. génère un fichier `AuditKit_<NOM-DU-POSTE>_<horodatage>.html` dans le dossier de sortie ;
-3. propose d'**ouvrir le rapport dans le navigateur**.
+3. propose d'**ouvrir le rapport dans le navigateur** (sauf en mode `-Quiet`).
+
+### Codes de sortie (intégration CI)
+
+Le script retourne un code de sortie exploitable dans vos scripts et pipelines CI :
+
+| Code | Signification |
+|---|---|
+| `0` | Audit terminé — statut global **OK** |
+| `1` | Audit terminé — statut global **WARN** |
+| `2` | Audit terminé — statut global **FAIL** |
+| `3` | Erreur d'exécution |
+
+```powershell
+.\AuditKit.ps1 -Quiet
+if ($LASTEXITCODE -ge 2) {
+    # Statut FAIL : alerte a traiter
+}
+```
+
+---
+
+## ⚙️ Configuration
+
+Les seuils de tolérance et les modules actifs sont définis dans `config/auditkit.config.json` :
+
+```json
+{
+  "seuils": {
+    "ram":        { "failGo": 4,  "warnGo": 8 },
+    "disque":     { "failPct": 90, "warnPct": 75 },
+    "signatures": { "warnJours": 3, "failJours": 7 },
+    "scan":       { "warnJours": 7 },
+    "services":   { "maxListe": 10 }
+  },
+  "modules": {
+    "Get-SystemInfo.psm1":    true,
+    "Get-FirewallInfo.psm1":  true,
+    "Get-AntivirusInfo.psm1": true,
+    "Get-ServiceErrors.psm1": true
+  }
+}
+```
+
+- **Fusion automatique** : une valeur absente du fichier conserve sa valeur par défaut — vous ne déclarez que ce que vous souhaitez modifier.
+- **Modules** : passez un module à `false` pour le désactiver.
+- **Chemin personnalisé** : `-ConfigPath .\mon-config.json`. Si le fichier est absent ou illisible, les valeurs par défaut sont utilisées (un avertissement est affiché).
 
 ---
 
@@ -127,7 +182,7 @@ Le **statut global** du rapport est calculé ainsi :
 
 ### Seuils appliqués
 
-Pour rester transparent, voici les règles de décision utilisées par les modules :
+Pour rester transparent, voici les règles de décision utilisées par les modules (**valeurs par défaut**, personnalisables dans `config/auditkit.config.json`) :
 
 | Vérification | Seuil |
 |---|---|
@@ -146,6 +201,8 @@ Pour rester transparent, voici les règles de décision utilisées par les modul
 ```
 auditkit/
 ├── AuditKit.ps1              # Point d'entrée : orchestrateur
+├── config/
+│   └── auditkit.config.json  # Seuils de tolerance + modules actifs
 ├── lib/
 │   ├── Audit.Framework.psm1  # Moteur : structure du rapport + export HTML
 │   ├── audit-report.css      # Feuille de style du rapport (embarquée à l'export)
@@ -154,6 +211,11 @@ auditkit/
 │       ├── Get-FirewallInfo.psm1
 │       ├── Get-AntivirusInfo.psm1
 │       └── Get-ServiceErrors.psm1
+├── tests/                    # Tests Pester (framework, modules, config)
+│   ├── Audit.Framework.Tests.ps1
+│   ├── Modules.Tests.ps1
+│   └── Config.Tests.ps1
+├── .github/workflows/ci.yml  # Integration continue (analyse + tests + smoke test)
 ├── .gitignore
 └── README.md
 ```
@@ -165,11 +227,12 @@ AuditKit.ps1 (orchestrateur)
    │
    ├─ 1. Vérifie la version de PowerShell et les droits administrateur
    ├─ 2. Charge lib/Audit.Framework.psm1 (le moteur)
-   ├─ 3. Charge les modules sélectionnés (tous, ou Système + Pare-feu en mode -Fast)
-   ├─ 4. Crée le rapport via New-AuditReport
-   ├─ 5. Exécute chaque module : chacun remplit ses sections et ses tests
-   ├─ 6. Calcule le résumé via Get-AuditSummary
-   └─ 7. Exporte le HTML via Export-AuditReportHtml
+   ├─ 3. Charge la configuration (seuils + modules actifs)
+   ├─ 4. Charge les modules sélectionnés (tous, ou Système + Pare-feu en mode -Fast)
+   ├─ 5. Crée le rapport via New-AuditReport
+   ├─ 6. Exécute chaque module : chacun remplit ses sections et ses tests
+   ├─ 7. Calcule le résumé via Get-AuditSummary
+   └─ 8. Exporte le HTML via Export-AuditReportHtml, puis retourne le code de sortie
 ```
 
 Cette séparation rend le projet **facilement extensible** : ajouter un audit = ajouter un module, sans toucher au moteur.
@@ -221,8 +284,11 @@ Set-StrictMode -Version Latest
 
 function Get-Audit<Domaine> {
     param(
-        [Parameter(Mandatory) [object]$Report
+        [Parameter(Mandatory)][object]$Report,
+        [object]$Thresholds
     )
+
+    if (-not $Thresholds) { $Thresholds = Get-AuditDefaultThresholds }
 
     # 1) Creer une section dans le rapport
     $section = Add-AuditSection $Report -Name "<Domaine>" `
@@ -248,9 +314,9 @@ Export-ModuleMember -Function Get-Audit<Domaine>
 
 ```powershell
 $auditFunctions = @{
-    'Get-SystemInfo.psm1'     = { Audit-SystemInfo $report | Out-Null }
+    'Get-SystemInfo.psm1'     = { Get-AuditSystem $report -Thresholds $thresholds | Out-Null }
     # ...
-    'Get-<Domaine>Info.psm1'  = { Get-Audit<Domaine> $report | Out-Null }
+    'Get-<Domaine>Info.psm1'  = { Get-Audit<Domaine> $report -Thresholds $thresholds | Out-Null }
 }
 ```
 
@@ -259,6 +325,22 @@ $auditFunctions = @{
 ```powershell
 .\AuditKit.ps1 -OutDir .\reports -Title "Test nouveau module"
 ```
+
+### Lancer les tests et l'analyse en local
+
+```powershell
+# Installation des outils (une seule fois)
+Install-Module -Name Pester -MinimumVersion 5.0 -Force -Scope CurrentUser
+Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+
+# Lancer les tests unitaires
+Invoke-Pester -Path tests
+
+# Analyse statique du code
+Invoke-ScriptAnalyzer -Path . -Recurse
+```
+
+La **CI GitHub Actions** exécute automatiquement ces vérifications sur **Windows PowerShell 5.1 et PowerShell 7+** à chaque push et pull request, accompagnées d'un *smoke test* (exécution complète de l'audit et vérification du code de sortie).
 
 ### API du framework (`Audit.Framework.psm1`)
 
@@ -273,6 +355,7 @@ Toutes les fonctions dont un module a besoin :
 | `Get-AuditSummary -Report $report` | Calcule les compteurs et le statut global |
 | `Export-AuditReportHtml -Report $report -Path <fichier.html>` | Génère le rapport HTML |
 | `Invoke-AuditCommand -Command { ... }` | Exécute une commande en capturant les erreurs (ne casse jamais l'audit) |
+| `Get-AuditDefaultThresholds` | Retourne les seuils de tolérance par défaut (surchargeables via la config) |
 
 ### Conventions de code
 
@@ -291,7 +374,7 @@ Ouvrez une *issue* sur GitHub en précisant : la version de Windows, la version 
 
 ## 🔒 Sécurité et confidentialité
 
-- **Lecture seule** : AuditKit exécute exclusivement des commandes de consultation (`Get-CimInstance`, `Get-Service`, `Get-NetFirewallProfile`, `Get-MpComputerSecurity`…). Il n'installe rien, ne modifie aucun paramètre et ne contacte aucun serveur.
+- **Lecture seule** : AuditKit exécute exclusivement des commandes de consultation (`Get-CimInstance`, `Get-Service`, `Get-NetFirewallProfile`, `Get-MpComputerStatus`…). Il n'installe rien, ne modifie aucun paramètre et ne contacte aucun serveur.
 - **Données sensibles** : les rapports contiennent des informations sur la machine (nom d'hôte, version de l'OS, logiciels installés, configuration réseau…). Ne les partagez pas publiquement et stockez-les comme toute donnée sensible.
 - **Dépôt** : les rapports générés et fichiers de test sont exclus du dépôt via `.gitignore`.
 
@@ -304,6 +387,7 @@ Ouvrez une *issue* sur GitHub en précisant : la version de Windows, la version 
 | `L'exécution de scripts est désactivée sur ce système` | Relancez avec `powershell -ExecutionPolicy Bypass -File .\AuditKit.ps1` (valable uniquement pour cette exécution) |
 | Informations manquantes (services, pare-feu, antivirus) | Le script n'a pas été lancé en administrateur — relancez PowerShell en tant qu'administrateur |
 | L'audit antivirus reste silencieux | Windows Defender est absent (certaines éditions de Windows) — les tests concernés sont alors simplement ignorés |
+| Avertissement de configuration illisible | Le fichier `-ConfigPath` est absent ou JSON invalide — les seuils par défaut sont utilisés |
 | Rapport HTML vide ou erreur à l'export | Vérifiez les droits d'écriture sur le dossier `-OutDir` |
 
 ---
@@ -312,8 +396,8 @@ Ouvrez une *issue* sur GitHub en précisant : la version de Windows, la version 
 
 - Exports complémentaires (JSON, CSV) pour l'automatisation
 - Modules additionnels : mises à jour Windows, comptes locaux, partages réseau, certificats
-- Seuils de tolérance configurables (fichier de configuration)
 - Comparaison de deux audits (avant / après intervention)
+- Historisation des audits dans le temps
 
 ---
 

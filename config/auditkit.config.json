@@ -1,0 +1,15 @@
+{
+  "seuils": {
+    "ram":        { "failGo": 4,  "warnGo": 8 },
+    "disque":     { "failPct": 90, "warnPct": 75 },
+    "signatures": { "warnJours": 3, "failJours": 7 },
+    "scan":       { "warnJours": 7 },
+    "services":   { "maxListe": 10 }
+  },
+  "modules": {
+    "Get-SystemInfo.psm1":    true,
+    "Get-FirewallInfo.psm1":  true,
+    "Get-AntivirusInfo.psm1": true,
+    "Get-ServiceErrors.psm1": true
+  }
+}

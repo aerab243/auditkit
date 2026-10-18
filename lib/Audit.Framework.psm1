@@ -148,6 +148,28 @@ function Get-AuditSummary {
 }
 
 # ============================================================================
+#  Seuils par defaut (surchargeables via config/auditkit.config.json)
+# ============================================================================
+function Get-AuditDefaultThresholds {
+    <#
+    .SYNOPSIS
+        Retourne les seuils de tolerance par defaut utilises par les modules.
+    .DESCRIPTION
+        Ces valeurs sont surchargees par la section "seuils" du fichier
+        config/auditkit.config.json charge par l'orchestrateur AuditKit.ps1.
+        Elles sont fusionnees avec ces defauts : une valeur absente du fichier
+        de configuration garde toujours sa valeur par defaut.
+    #>
+    [pscustomobject]@{
+        Ram        = [pscustomobject]@{ FailGo    = 4;  WarnGo    = 8 }
+        Disque     = [pscustomobject]@{ FailPct   = 90; WarnPct   = 75 }
+        Signatures = [pscustomobject]@{ WarnJours = 3;  FailJours = 7 }
+        Scan       = [pscustomobject]@{ WarnJours = 7 }
+        Services   = [pscustomobject]@{ MaxListe  = 10 }
+    }
+}
+
+# ============================================================================
 #  Style CSS pour le rapport HTML (charge depuis le fichier audit-report.css)
 # ============================================================================
 function Get-AuditCss {

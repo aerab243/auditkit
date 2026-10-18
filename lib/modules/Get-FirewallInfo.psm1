@@ -13,8 +13,12 @@ function Get-AuditFirewall {
         Execute les tests du pare-feu et ajoute les resultats au rapport.
     #>
     param(
-        [Parameter(Mandatory)][object]$Report
+        [Parameter(Mandatory)][object]$Report,
+        # Seuils de tolerance (defaut : Get-AuditDefaultThresholds)
+        [object]$Thresholds
     )
+
+    if (-not $Thresholds) { $Thresholds = Get-AuditDefaultThresholds }
 
     $section = Add-AuditSection $Report -Name "Pare-feu" `
         -Description "Etat des profils du Pare-feu Windows Defender."

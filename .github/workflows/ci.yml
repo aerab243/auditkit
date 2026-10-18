@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    name: Analyse + tests (${{ matrix.shell }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Validation sur Windows PowerShell 5.1 ET PowerShell 7+
+        shell: [pwsh, powershell]
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Installation des outils (Pester, PSScriptAnalyzer)
+        shell: ${{ matrix.shell }}
+        run: |
+          Install-Module -Name Pester -MinimumVersion 5.0 -Force -SkipPublisherCheck -Scope CurrentUser
+          Install-Module -Name PSScriptAnalyzer -Force -SkipPublisherCheck -Scope CurrentUser
+
+      - name: Analyse statique (PSScriptAnalyzer)
+        shell: ${{ matrix.shell }}
+        run: |
+          $resultats = Invoke-ScriptAnalyzer -Path . -Recurse
+          $resultats | Format-Table -AutoSize
+          $erreurs = $resultats | Where-Object { $_.Severity -eq 'Error' }
+          if ($erreurs) {
+              Write-Error "PSScriptAnalyzer a trouve $($erreurs.Count) erreur(s)"
+              exit 1
+          }
+
+      - name: Tests Pester
+        shell: ${{ matrix.shell }}
+        run: |
+          $config = New-PesterConfiguration
+          $config.Run.Path = 'tests'
+          $config.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $config
+
+      - name: Smoke test - execution complete de l'audit
+        shell: ${{ matrix.shell }}
+        run: |
+          .\AuditKit.ps1 -Quiet -OutDir "$env:RUNNER_TEMP\audit-report"
+          $code = $LASTEXITCODE
+          Write-Host "Code de sortie de l'audit : $code"
+          # 0 = OK, 1 = WARN (tolere), >= 2 = FAIL -> echec du build
+          if ($code -ge 2) { exit $code }
+          $rapport = Get-ChildItem "$env:RUNNER_TEMP\audit-report" -Filter '*.html' -ErrorAction SilentlyContinue
+          if (-not $rapport) {
+              Write-Error "Aucun rapport HTML n'a ete genere"
+              exit 1
+          }
+          Write-Host "Rapport genere : $($rapport.FullName)"
+
+      - name: Test des seuils personnalises et du code de sortie
+        shell: ${{ matrix.shell }}
+        run: |
+          # Un seuil RAM impossible force un FAIL -> code de sortie attendu : 2
+          $configTest = Join-Path $env:RUNNER_TEMP 'config-test.json'
+          @{ seuils = @{ ram = @{ failGo = 100000; warnGo = 8 } } } |
+            ConvertTo-Json -Depth 5 |
+            Set-Content -Path $configTest
+          .\AuditKit.ps1 -Quiet -ConfigPath $configTest -OutDir "$env:RUNNER_TEMP\audit-seuils"
+          $code = $LASTEXITCODE
+          Write-Host "Code de sortie avec seuil FAIL : $code"
+          if ($code -ne 2) {
+              Write-Error "Code de sortie attendu : 2 (FAIL), obtenu : $code"
+              exit 1
+          }

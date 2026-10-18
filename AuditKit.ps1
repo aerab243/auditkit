@@ -11,11 +11,15 @@
 
     Usage (Windows) :
         # 1) Depuis un shell PowerShell (recommande, en tant qu'admin) :
-            cd C:\Users\aerab\Documents\scripts
+            cd C:\Users\aerab\Documents\auditkit
             powershell -ExecutionPolicy Bypass -File .\AuditKit.ps1
 
         # 2) Avec options :
             .\AuditKit.ps1 -OutDir .\reports
+            .\AuditKit.ps1 -Quiet      # mode non interactif (CI / automatisation)
+            .\AuditKit.ps1 -ConfigPath .\config\auditkit.config.json
+
+    Codes de sortie : 0 = OK, 1 = WARN, 2 = FAIL, 3 = erreur d'execution.
 
     Le script est 100 % lecture seule : il ne modifie rien sur le systeme.
 #>
@@ -29,10 +33,23 @@ param(
     [string]$Title = 'AuditKit - Audit Windows',
 
     # Mode rapide : ne fait que les tests systeme + pare-feu
-    [switch]$Fast
+    [switch]$Fast,
+
+    # Mode non interactif : aucune invite (pause administrateur, ouverture du rapport)
+    [switch]$Quiet,
+
+    # Chemin vers le fichier de configuration JSON (seuils + modules actifs).
+    # Vide = config\auditkit.config.json a cote du script (resolu apres le bloc param,
+    # car $MyInvocation.MyCommand.Path n'est pas fiable dans les valeurs par defaut).
+    [string]$ConfigPath = ''
 )
 
 $ErrorActionPreference = 'Continue'
+
+# Chemin de configuration par defaut : config\auditkit.config.json a cote du script
+if (-not $ConfigPath) {
+    $ConfigPath = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'config\auditkit.config.json'
+}
 
 # ============================================================================
 #  0. Pre-requis : verifier qu'on tourne sous PowerShell 5+ ou 7+
@@ -65,8 +82,10 @@ if ($isAdmin) {
 
 if (-not $isAdmin) {
     Write-Warning "Lancez en tant qu'administrateur pour un audit complet (services, pare-feu, antivirus)."
-    Write-Host "  Pour continuer en mode restreint, appuyez sur ENTER - sinon Ctrl+C pour annuler."
-    [void]$host.Read
+    if (-not $Quiet) {
+        Write-Host "  Pour continuer en mode restreint, appuyez sur ENTER - sinon Ctrl+C pour annuler."
+        [void]$host.Read
+    }
 }
 
 # ============================================================================
@@ -79,6 +98,47 @@ Write-Host ""
 Write-Host "Chargement du framework..." -ForegroundColor Cyan
 Import-Module -Name (Join-Path $libDir 'Audit.Framework.psm1') -Force
 
+# ============================================================================
+#  2 bis. Configuration : seuils de tolerance + modules actifs
+# ============================================================================
+function Merge-AuditConfig {
+    <#
+    .SYNOPSIS
+        Fusionne une configuration utilisateur avec les valeurs par defaut.
+    .DESCRIPTION
+        Fusion recursive : toute valeur absente du fichier de configuration
+        conserve sa valeur par defaut.
+    #>
+    param($Default, $Override)
+
+    if ($null -eq $Override) { return $Default }
+    if ($Override -isnot [System.Management.Automation.PSCustomObject]) { return $Override }
+
+    $merged = $Default.PSObject.Copy()
+    foreach ($prop in $Override.PSObject.Properties) {
+        $merged.($prop.Name) = Merge-AuditConfig $merged.($prop.Name) $prop.Value
+    }
+    return $merged
+}
+
+$thresholds = Get-AuditDefaultThresholds
+$activeModules = $null
+
+if (Test-Path $ConfigPath) {
+    try {
+        $userConfig = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+        if ($userConfig.seuils) {
+            $thresholds = Merge-AuditConfig $thresholds $userConfig.seuils
+        }
+        $activeModules = $userConfig.modules
+        Write-Host "Configuration : $ConfigPath" -ForegroundColor DarkCyan
+    } catch {
+        Write-Warning "Configuration illisible ($ConfigPath) : $($_.Exception.Message). Seuils par defaut utilises."
+    }
+} else {
+    Write-Host "Aucune configuration ($ConfigPath) : seuils par defaut utilises." -ForegroundColor DarkCyan
+}
+
 $moduleDir = Join-Path $libDir 'modules'
 $modulesToLoad = Get-ChildItem -Path $moduleDir -Filter '*.psm1' -File
 
@@ -88,6 +148,15 @@ if ($Fast) {
     }
 } else {
     $selectedModules = $modulesToLoad
+}
+
+# Filtre selon la configuration : un module reste actif sauf s'il est
+# explicitement desactive (false) dans la section "modules".
+if ($activeModules) {
+    $selectedModules = $selectedModules | Where-Object {
+        $p = $activeModules.PSObject.Properties[$_.Name]
+        (-not $p) -or ($p.Value -ne $false)
+    }
 }
 
 foreach ($m in $selectedModules) {
@@ -114,10 +183,10 @@ Write-Host "Execution des modules d'audit..." -ForegroundColor Cyan
 
 # Correspondance : nom de fichier -> fonction d'audit
 $auditFunctions = @{
-    'Get-SystemInfo.psm1'     = { Get-AuditSystem $report | Out-Null }
-    'Get-FirewallInfo.psm1'   = { Get-AuditFirewall $report | Out-Null }
-    'Get-AntivirusInfo.psm1'  = { Get-AuditAntivirus $report | Out-Null }
-    'Get-ServiceErrors.psm1'  = { Get-AuditServices $report | Out-Null }
+    'Get-SystemInfo.psm1'     = { Get-AuditSystem $report -Thresholds $thresholds | Out-Null }
+    'Get-FirewallInfo.psm1'   = { Get-AuditFirewall $report -Thresholds $thresholds | Out-Null }
+    'Get-AntivirusInfo.psm1'  = { Get-AuditAntivirus $report -Thresholds $thresholds | Out-Null }
+    'Get-ServiceErrors.psm1'  = { Get-AuditServices $report -Thresholds $thresholds | Out-Null }
 }
 
 foreach ($m in $selectedModules) {
@@ -177,11 +246,28 @@ Write-Host "============================================================" -Foreg
 Write-Host "  Audit termine !" -ForegroundColor Green
 Write-Host "  Rapport HTML : $reportPath" -ForegroundColor Green
 Write-Host "============================================================"
-Write-Host ""
-Write-Host "Ouvrir le rapport dans le navigateur ? (o/n)"
-$choice = Read-Host
-if ($choice -match '^[oO1Yy]$') {
-    Start-Process -FilePath $reportPath
+
+if (-not $Quiet) {
+    Write-Host ""
+    Write-Host "Ouvrir le rapport dans le navigateur ? (o/n)"
+    $choice = Read-Host
+    if ($choice -match '^[oO1Yy]$') {
+        Start-Process -FilePath $reportPath
+    }
 }
+
 Write-Host ""
 Write-Host "Audit termine avec succes." -ForegroundColor DarkGreen
+
+# ============================================================================
+#  8. Code de sortie (pour integration CI)
+#     0 = OK, 1 = WARN, 2 = FAIL, 3 = erreur d'execution
+# ============================================================================
+$exitCode = switch ($summary.GlobalStatus) {
+    'OK'    { 0 }
+    'WARN'  { 1 }
+    'FAIL'  { 2 }
+    default { 3 }
+}
+Write-Host "Code de sortie : $exitCode (statut global : $($summary.GlobalStatus))" -ForegroundColor DarkCyan
+exit $exitCode
