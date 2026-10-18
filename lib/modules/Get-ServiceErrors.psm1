@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Module d'audit : Services en erreur.
 .DESCRIPTION
@@ -7,7 +7,7 @@
 
 Set-StrictMode -Version Latest
 
-function Audit-ServiceErrors {
+function Get-AuditServices {
     <#
     .SYNOPSIS
         Exécute les tests des services et ajoute les résultats au rapport.
@@ -19,9 +19,11 @@ function Audit-ServiceErrors {
     $section = Add-AuditSection $Report -Name "Services" `
         -Description "Services Windows en état d'erreur ou non démarrés."
 
-    # ---- 1. Services en erreur ----
-    $errorServices = Invoke-AuditCommand { Get-Service | Where-Object { $_.Status -eq 'Stopped' -and $_.StartType -eq 'Automatic' } }
-    if ($null -eq $errorServices) {
+    # ---- 1. Services automatiques arrêtés ----
+    # NB : @() garantit un tableau même quand aucun (ou un seul) service est retourné.
+    try {
+        $errorServices = @(Get-Service | Where-Object { $_.Status -eq 'Stopped' -and $_.StartType -eq 'Automatic' })
+    } catch {
         Add-AuditTest $section -Name "Services automatiques en erreur" -Status "WARN" `
             -Message "Impossible de récupérer la liste des services."
         return $section
@@ -35,9 +37,9 @@ function Audit-ServiceErrors {
         $test = Add-AuditTest $section -Name "Services automatiques en erreur" -Status "WARN" `
             -Message "$($errorServices.Count) service(s) automatique(s) arrêté(s) : $($names -join ', ')"
         Add-AuditDetail $test -Rows @(
-            @($errorServices | Select-Object -First 10 | ForEach-Object {
+            $errorServices | Select-Object -First 10 | ForEach-Object {
                 [pscustomobject]@{ Service = $_.Name; DisplayName = $_.DisplayName; Status = 'Arrêté' }
-            })
+            }
         )
     }
 
@@ -70,4 +72,4 @@ function Audit-ServiceErrors {
     return
 }
 
-Export-ModuleMember -Function Audit-ServiceErrors
+Export-ModuleMember -Function Get-AuditServices

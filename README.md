@@ -35,7 +35,7 @@ L'outil est conçu pour :
 | Domaine audité | Vérifications effectuées |
 |---|---|
 | 🖥️ **Système** | Version de Windows (build, architecture), mémoire RAM (totale / libre / utilisée), espace disque par lecteur, processeur, uptime |
-| 🛡️ **Pare-feu** | État des 3 profils (Domaine / Privé / Public), action par défaut en entrée, nombre de règles actives |
+| 🛡️ **Pare-feu** | État des 3 profils (Domaine / Privé / Public), action par défaut en entrée et en sortie |
 | 🦠 **Antivirus** | Service Windows Defender, protection en temps réel, antimalware, ancienneté des définitions de virus, dernier scan |
 | ⚙️ **Services** | Services automatiques arrêtés anormalement, état des services critiques réseau (DHCP, DNS, W32Time, Spooler…) |
 | 📄 **Rapport** | Export HTML autonome avec résumé global, cartes de statistiques et tableaux de détails |
@@ -281,7 +281,7 @@ Toutes les fonctions dont un module a besoin :
 - **Sécurité** : un module ne doit **jamais** modifier le système (lecture seule obligatoire).
 - **Robustesse** : utiliser `Invoke-AuditCommand` pour les commandes susceptibles d'échurer, afin qu'une erreur n'interrompe pas l'audit complet.
 - **Statuts** : n'utiliser que `OK`, `WARN`, `FAIL`, `INFO`, et documenter tout nouveau seuil dans le tableau des seuils du README.
-- **Verbes PowerShell** : préférer un verbe approuvé (`Get-`, `Test-`…). Le verbe `Audit` n'est pas approuvé et génère un avertissement sans gravité à l'import du module.
+- **Verbes PowerShell** : utiliser un verbe approuvé (`Get-`, `Test-`, `Invoke-`…). Les fonctions d'audit suivent la convention `Get-Audit<Domaine>` (ex. `Get-AuditSystem`) afin d'éviter les avertissements à l'import des modules.
 
 ### Signaler un bug
 
@@ -302,9 +302,8 @@ Ouvrez une *issue* sur GitHub en précisant : la version de Windows, la version 
 | Problème | Solution |
 |---|---|
 | `L'exécution de scripts est désactivée sur ce système` | Relancez avec `powershell -ExecutionPolicy Bypass -File .\AuditKit.ps1` (valable uniquement pour cette exécution) |
-| Avertissements `verbes non approuvés` à l'import | Sans gravité — lié au nom des fonctions (`Audit-*`). Voir les conventions de code |
 | Informations manquantes (services, pare-feu, antivirus) | Le script n'a pas été lancé en administrateur — relancez PowerShell en tant qu'administrateur |
-| Le résumé console affiche un objet brut (`@{OK=5; ...}`) | Bug d'affichage connu (interpolation de propriété dans une chaîne) — sans impact sur le rapport HTML |
+| L'audit antivirus reste silencieux | Windows Defender est absent (certaines éditions de Windows) — les tests concernés sont alors simplement ignorés |
 | Rapport HTML vide ou erreur à l'export | Vérifiez les droits d'écriture sur le dossier `-OutDir` |
 
 ---

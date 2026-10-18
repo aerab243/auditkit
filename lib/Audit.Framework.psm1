@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     AuditKit - Module Framework.
     Fournit le moteur de rapport et les helpers communs a tous les modules.

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     AuditKit - Audit Windows (point d'entree).
 .DESCRIPTION
@@ -114,10 +114,10 @@ Write-Host "Execution des modules d'audit..." -ForegroundColor Cyan
 
 # Correspondance : nom de fichier -> fonction d'audit
 $auditFunctions = @{
-    'Get-SystemInfo.psm1'     = { Audit-SystemInfo $report | Out-Null }
-    'Get-FirewallInfo.psm1'   = { Audit-Firewall $report | Out-Null }
-    'Get-AntivirusInfo.psm1'  = { Audit-Antivirus $report | Out-Null }
-    'Get-ServiceErrors.psm1'  = { Audit-ServiceErrors $report | Out-Null }
+    'Get-SystemInfo.psm1'     = { Get-AuditSystem $report | Out-Null }
+    'Get-FirewallInfo.psm1'   = { Get-AuditFirewall $report | Out-Null }
+    'Get-AntivirusInfo.psm1'  = { Get-AuditAntivirus $report | Out-Null }
+    'Get-ServiceErrors.psm1'  = { Get-AuditServices $report | Out-Null }
 }
 
 foreach ($m in $selectedModules) {
@@ -152,7 +152,7 @@ $color = 'Red'
 if ($summary.GlobalStatus -eq 'OK') { $color = 'Green' }
 if ($summary.GlobalStatus -eq 'WARN') { $color = 'Yellow' }
 Write-Host "  Statut global : $($summary.GlobalStatus)" -ForegroundColor $color
-Write-Host "    OK : $summary.OK | WARN : $summary.WARN | FAIL : $summary.FAIL | INFO : $summary.INFO (total $summary.Total)"
+Write-Host "    OK : $($summary.OK) | WARN : $($summary.WARN) | FAIL : $($summary.FAIL) | INFO : $($summary.INFO) (total $($summary.Total))"
 
 # ============================================================================
 #  6. Export du rapport HTML

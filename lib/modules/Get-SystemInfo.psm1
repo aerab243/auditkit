@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Module d'audit : Informations systeme.
 .DESCRIPTION
@@ -7,7 +7,7 @@
 
 Set-StrictMode -Version Latest
 
-function Audit-SystemInfo {
+function Get-AuditSystem {
     <#
     .SYNOPSIS
         Execute les tests de l'information systeme et ajoute les resultats au rapport.
@@ -94,4 +94,4 @@ function Audit-SystemInfo {
     return
 }
 
-Export-ModuleMember -Function Audit-SystemInfo
+Export-ModuleMember -Function Get-AuditSystem

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Module d'audit : Pare-feu Windows.
 .DESCRIPTION
@@ -7,7 +7,7 @@
 
 Set-StrictMode -Version Latest
 
-function Audit-Firewall {
+function Get-AuditFirewall {
     <#
     .SYNOPSIS
         Execute les tests du pare-feu et ajoute les resultats au rapport.
@@ -46,23 +46,25 @@ function Audit-Firewall {
         }
         $test = Add-AuditTest $section -Name "Pare-feu $label" -Status $status -Message $msg
 
-        # Details : regles actives
-        try {
-            $ruleCount = (Get-NetFirewallRule -Profile $p.Name -ErrorAction SilentlyContinue | Measure-Object).Count
-        } catch {
-            $ruleCount = 0
+        # Details : actions par defaut du profil (lecture directe, peu couteuse)
+        $inboundAction = switch ($p.DefaultInboundAction) {
+            'Block'         { 'Bloquer' }
+            'Allow'         { 'Autoriser' }
+            'NotConfigured' { 'Par defaut (bloquer)' }
+            default         { [string]$p.DefaultInboundAction }
         }
-        $defaultAction = switch ($p.DefaultInboundAction) {
-            'Block'   { 'Bloquer' }
-            'Allow'   { 'Autoriser' }
-            default    { [string]$p.DefaultInboundAction }
+        $outboundAction = switch ($p.DefaultOutboundAction) {
+            'Block'         { 'Bloquer' }
+            'Allow'         { 'Autoriser' }
+            'NotConfigured' { 'Par defaut (autoriser)' }
+            default         { [string]$p.DefaultOutboundAction }
         }
         $stateText = 'Desactive'
         if ($enabled) { $stateText = 'Active' }
         Add-AuditDetail $test -Rows @(
             [pscustomobject]@{ Parametre = 'Etat';                       Valeur = $stateText },
-            [pscustomobject]@{ Parametre = 'Action par defaut (entree)'; Valeur = $defaultAction },
-            [pscustomobject]@{ Parametre = 'Regles actives';            Valeur = "$ruleCount" }
+            [pscustomobject]@{ Parametre = 'Action par defaut (entree)'; Valeur = $inboundAction },
+            [pscustomobject]@{ Parametre = 'Action par defaut (sortie)'; Valeur = $outboundAction }
         )
     }
 
@@ -80,4 +82,4 @@ function Audit-Firewall {
     return
 }
 
-Export-ModuleMember -Function Audit-Firewall
+Export-ModuleMember -Function Get-AuditFirewall
