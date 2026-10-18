@@ -1,0 +1,4 @@
+# Fichiers de sortie / artefacts de test
+test-output.txt
+reports/
+*.html
